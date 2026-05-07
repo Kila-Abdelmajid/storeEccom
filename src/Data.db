@@ -1,0 +1,103 @@
+-- 1. Users
+CREATE TABLE users (
+    userId SERIAL PRIMARY KEY,
+    firstName VARCHAR(50) NOT NULL,
+    lastName VARCHAR(50) NOT NULL,
+    email VARCHAR(191) UNIQUE NOT NULL,
+    password VARCHAR(255) NOT NULL,
+    phone VARCHAR(20),
+    role VARCHAR(20) DEFAULT 'user', -- PostgreSQL k-t-fdel VARCHAR m3a CHECK f blasst ENUM
+    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT chk_role CHECK (role IN ('admin', 'user'))
+);
+
+-- 2. Categories
+CREATE TABLE categories (
+    categoryId SERIAL PRIMARY KEY,
+    categoryName VARCHAR(100) NOT NULL,
+    categoryImage VARCHAR(255),
+    slug VARCHAR(100) UNIQUE NOT NULL,
+    userId INT REFERENCES users(userId) ON DELETE SET NULL
+);
+
+-- 3. Products
+CREATE TABLE products (
+    productId SERIAL PRIMARY KEY,
+    userId INT REFERENCES users(userId),
+    categoryId INT REFERENCES categories(categoryId),
+    productName VARCHAR(255) NOT NULL,
+    description TEXT,
+    price DECIMAL(10, 2) NOT NULL,
+    oldPrice DECIMAL(10, 2),
+    stock INT DEFAULT 0,
+    productImage VARCHAR(255),
+    isNew BOOLEAN DEFAULT TRUE,
+    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 4. Product Images
+CREATE TABLE productImages (
+    imageId SERIAL PRIMARY KEY,
+    productId INT REFERENCES products(productId) ON DELETE CASCADE,
+    imagePath VARCHAR(255) NOT NULL
+);
+
+-- 5. Reviews
+CREATE TABLE reviews (
+    reviewId SERIAL PRIMARY KEY,
+    productId INT REFERENCES products(productId) ON DELETE CASCADE,
+    userId INT REFERENCES users(userId),
+    rating INT CHECK (rating >= 1 AND rating <= 5),
+    comment TEXT,
+    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 6. Orders
+CREATE TABLE orders (
+    orderId SERIAL PRIMARY KEY,
+    userId INT REFERENCES users(userId),
+    totalPrice DECIMAL(10, 2) NOT NULL,
+    status VARCHAR(20) DEFAULT 'pending',
+    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT chk_status CHECK (status IN ('pending', 'confirmed', 'delivered'))
+);
+
+-- 7. OrderItems
+CREATE TABLE orderItems (
+    orderItemsId SERIAL PRIMARY KEY,
+    orderId INT REFERENCES orders(orderId) ON DELETE CASCADE,
+    productId INT REFERENCES products(productId),
+    quantity INT NOT NULL,
+    priceAtPurchase DECIMAL(10, 2) NOT NULL
+);
+
+-- 8. Messages
+CREATE TABLE messages (
+    messageId SERIAL PRIMARY KEY,
+    userId INT REFERENCES users(userId),
+    senderName VARCHAR(100),
+    senderEmail VARCHAR(191),
+    senderPhone VARCHAR(20),
+    senderSubject VARCHAR(255),
+    senderMessage TEXT,
+    sendedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 9. Favorites
+CREATE TABLE favorites (
+    favoriteId SERIAL PRIMARY KEY,
+    userId INT REFERENCES users(userId) ON DELETE CASCADE,
+    productId INT REFERENCES products(productId) ON DELETE CASCADE,
+    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(userId, productId)
+);
+
+CREATE TABLE clientReviews (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255),
+    rating INTEGER CHECK (rating >= 1 AND rating <= 5),
+    title VARCHAR(255),
+    content TEXT,
+    verified BOOLEAN DEFAULT false,
+    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
