@@ -1,6 +1,7 @@
 
 
 export type Product = {
+  deletedAt: any;
   id: number;
   image: string;
   name: string;

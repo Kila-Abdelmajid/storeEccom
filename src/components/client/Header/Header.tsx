@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import Link from "next/link";
+import Image from "next/image";
+import SearchBar from '@/components/ui/SearchBar';
+import * as cartStorage from '@/lib/cartStorage';
+
 import {
-  Search,
   User,
-  Globe,
   ShoppingCart,
   Menu,
   X,
@@ -14,223 +15,336 @@ import {
   ShoppingBag,
   Mail,
   Info,
-  Users,
 } from "lucide-react";
-import { useSession } from "@/lib/useSession";
+import { useAuth } from '@/hooks/useAuth';
+import CartDrawer from "@/components/client/Cart/CartDrawer";
 
 const navItems = [
-  { name: "Home", path: "/", icon: Home },
-  { name: "Shop", path: "#shop", icon: ShoppingBag },
-  { name: "Contact", path: "#contact", icon: Mail },
-  { name: "About", path: "#about", icon: Info },
-  { name: "Our Team", path: "#our-team", icon: Users },
+  { name: "Home", path: "/", hash: "", icon: Home },
+  { name: "Shop", path: "/#shop", hash: "shop", icon: ShoppingBag },
+    { name: "Reviews", path: "/#reviews", hash: "reviews", icon: Info },
+  { name: "Contact", path: "/#contact", hash: "contact", icon: Mail },
 ];
 
 export default function Header() {
   const router = useRouter();
   const pathname = usePathname();
-  const { session, loading } = useSession();
-  const [searchQuery, setSearchQuery] = useState("");
+  const { session, loading } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeHash, setActiveHash] = useState("");
+  const [cartCount, setCartCount] = useState(0);
+  const [cartDrawerOpen, setCartDrawerOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
+  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isNavigatingRef = useRef(false);
 
   const isLoggedIn = !!session;
 
+  const updateActiveHashOnScroll = useCallback(() => {
+    if (isNavigatingRef.current) return;
+
+    if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
+    scrollTimeoutRef.current = setTimeout(() => {
+      const sections = navItems
+        .filter(item => item.hash)
+        .map(item => ({ id: item.hash, path: item.path }));
+      
+      if (window.scrollY < 80) {
+        setActiveHash("");
+        return;
+      }
+
+      for (let i = sections.length - 1; i >= 0; i--) {
+        const section = document.getElementById(sections[i].id);
+        if (section) {
+          const rect = section.getBoundingClientRect();
+          if (rect.top <= 120) {
+            // ✅ التعديل 1: نحفظو غير الـ Hash باش يطابق مع URL
+            setActiveHash(`#${sections[i].id}`);
+            return;
+          }
+        }
+      }
+    }, 50);
+  }, []);
+
+  const handleNavigation = (path: string, closeMenu = false) => {
+    if (closeMenu) setMobileMenuOpen(false);
+    isNavigatingRef.current = true;
+    
+    // ✅ التعديل 2: نقلبو بـ includes حيت الـ path كيبدا بـ /
+    if (path.includes("#")) {
+      const hashIndex = path.indexOf("#");
+      const hash = path.substring(hashIndex); // كتعطينا "#shop"
+      const elementId = hash.slice(1); // كتعطينا "shop"
+      const element = document.getElementById(elementId);
+      
+      if (element) {
+        element.scrollIntoView({ behavior: "smooth" });
+        window.history.pushState(null, "", path);
+        setActiveHash(hash);
+        setTimeout(() => {
+          isNavigatingRef.current = false;
+        }, 600);
+      } else {
+        // يلا كنا ف صفحة أخرى وبغينا نمشيو للـ home عاد نهبطو لـ shop
+        router.push(path);
+        setActiveHash(hash);
+        setTimeout(() => {
+          isNavigatingRef.current = false;
+        }, 600);
+      }
+    } else if (path === "/") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      window.history.pushState(null, "", "/");
+      setActiveHash("");
+      if (pathname !== "/") router.push("/");
+      setTimeout(() => {
+        isNavigatingRef.current = false;
+      }, 600);
+    } else {
+      router.push(path);
+      setActiveHash("");
+      setTimeout(() => {
+        isNavigatingRef.current = false;
+      }, 300);
+    }
+  };
+
   useEffect(() => {
-    const handleHashChange = () => setActiveHash(window.location.hash);
+    const handleScroll = () => setScrolled(window.scrollY > 20);
+    window.addEventListener("scroll", handleScroll);
+    window.addEventListener("scroll", updateActiveHashOnScroll);
+    updateActiveHashOnScroll();
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+      window.removeEventListener("scroll", updateActiveHashOnScroll);
+      if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
+    };
+  }, [updateActiveHashOnScroll]);
+
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash;
+      if (hash) setActiveHash(hash);
+      else setActiveHash("");
+      isNavigatingRef.current = false;
+    };
     window.addEventListener("hashchange", handleHashChange);
+    // ✅ قراءة الـ Hash ف الـ Load الأول باش يلا دخل لـ الرابط نيشان يتعلم
     handleHashChange();
     return () => window.removeEventListener("hashchange", handleHashChange);
   }, []);
 
   useEffect(() => {
-    document.body.style.overflow = mobileMenuOpen ? "hidden" : "unset";
+    document.body.style.overflow = mobileMenuOpen ? "hidden" : "";
+    return () => { document.body.style.overflow = ""; };
   }, [mobileMenuOpen]);
 
-  const handleNavigation = (path: string, closeMenu = false) => {
-    if (closeMenu) setMobileMenuOpen(false);
-    if (path.startsWith("#")) {
-      const targetId = path.replace("#", "");
-      const element = document.getElementById(targetId);
-      if (element) {
-        element.scrollIntoView({ behavior: "smooth" });
-        window.history.pushState(null, "", path);
-        setActiveHash(path);
+  const fetchCartCount = async () => {
+    if (session) {
+      try {
+        const res = await fetch('/api/ClientApi/cart');
+        if (res.ok) {
+          const items = await res.json();
+          const total = items.reduce((sum: number, item: any) => sum + item.quantity, 0);
+          setCartCount(total);
+        }
+      } catch (err) {
+        console.error(err);
       }
     } else {
-      router.push(path);
-      setActiveHash("");
+      const guestCount = cartStorage.getGuestCartCount();
+      setCartCount(guestCount);
     }
   };
 
+  useEffect(() => {
+    fetchCartCount();
+    window.addEventListener('cart-updated', fetchCartCount);
+    return () => window.removeEventListener('cart-updated', fetchCartCount);
+  }, [session]);
+
+  // ✅ التعديل 3: إصلاح دالة isActive باش تخدم مزيان مع الروابط لي فيهم #
+  const isActive = (path: string) => {
+    if (path === "/") {
+      return pathname === "/" && (!activeHash || activeHash === "");
+    }
+    if (path.includes("#")) {
+      const hash = path.substring(path.indexOf("#"));
+      return activeHash === hash;
+    }
+    return pathname === path;
+  };
+
   return (
-    <header className="fixed top-0 left-0 w-full z-100 bg-white border-b border-gray-100 shadow-[0_2px_15px_-3px_rgba(0,0,0,0.07)] transition-all duration-300">
-      <div className="container mx-auto px-4 md:px-10">
-        {/* Top Row */}
+    <header
+      className={`fixed top-0 left-0 w-full z-50 transition-all duration-500 ${
+        scrolled
+          ? "bg-white/80 backdrop-blur-lg shadow-xl border-b border-white/20"
+          : "bg-white/60 backdrop-blur-sm shadow-md border-b border-slate-100/50"
+      }`}
+    >
+      <div className="container mx-auto px-4 md:px-8 lg:px-12">
         <div className="flex items-center justify-between h-16 md:h-20">
-          {/* Left: Search & Mobile Menu */}
-          <div className="flex items-center flex-1">
-            <button
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="md:hidden p-2 -ml-2 text-gray-900 hover:bg-gray-50 rounded-full transition-colors"
-            >
-              {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
-            </button>
-
-            <form className="hidden md:flex relative group w-full max-w-[320px]">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search for products..."
-                className="w-full pl-11 pr-4 py-2.5 rounded-full border border-gray-200 bg-gray-50/50 text-sm focus:bg-white focus:border-[#c9a96e] focus:ring-4 focus:ring-[#c9a96e]/5 outline-none transition-all duration-300"
-              />
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-[#c9a96e] transition-colors" />
-            </form>
-          </div>
-
-          {/* Logo */}
-          <div
-            className="flex flex-col items-center cursor-pointer group"
-            onClick={() => handleNavigation("/")}
-          >
-            <span className="font-black text-xl md:text-2xl tracking-tighter text-gray-900 transition-transform duration-300 group-hover:scale-105">
-              ABDO<span className="text-[#c9a96e]">STORE</span>
-            </span>
-            <div className="w-6 h-0.5 bg-[#c9a96e] rounded-full scale-x-0 group-hover:scale-x-100 transition-transform duration-500 origin-center mt-0.5"></div>
-          </div>
-
-          {/* Right Icons */}
-          <div className="flex items-center justify-end gap-1 md:gap-4 flex-1">
-            <button className="hidden sm:flex p-2.5 text-gray-600 hover:text-[#c9a96e] hover:bg-[#c9a96e]/5 rounded-full transition-all">
-              <Globe size={20} strokeWidth={1.5} />
-            </button>
-            {!loading && (
-              isLoggedIn ? (
-                <button
-                  onClick={() => router.push("/profile")}
-                  className="p-2.5 text-gray-600 hover:text-[#c9a96e] hover:bg-[#c9a96e]/5 rounded-full transition-all"
-                >
-                  <User size={20} strokeWidth={1.5} />
-                </button>
-              ) : (
-                <button
-                  onClick={() => router.push("/login")}
-                  className="p-2.5 text-gray-600 hover:text-[#c9a96e] hover:bg-[#c9a96e]/5 rounded-full transition-all"
-                >
-                  <User size={20} strokeWidth={1.5} />
-                </button>
-              )
-            )}
-            <button className="p-2.5 text-gray-900 relative group transition-all">
-              <div className="group-hover:scale-110 transition-transform duration-300">
-                <ShoppingCart size={22} strokeWidth={1.5} />
+          <div className="flex items-center gap-3 md:gap-6 lg:gap-10">
+            <div className="flex items-center gap-2 cursor-pointer group" onClick={() => handleNavigation("/")}>
+              <div className="relative w-9 h-9 md:w-12 md:h-12 rounded-full overflow-hidden bg-white/20 shadow-sm ring-1 ring-amber-100/30">
+                <Image
+                  src="/photos/image.png"
+                  alt="Fleur Marwa"
+                  fill
+                  className="object-cover transition-transform duration-300 group-hover:scale-105"
+                  priority
+                />
               </div>
-              <span className="absolute top-1 right-1 bg-[#c9a96e] text-white text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center shadow-sm">
-                0
+              <span className="text-sm sm:text-base md:text-lg font-serif italic font-bold bg-gradient-to-r from-amber-700 to-amber-500 bg-clip-text text-transparent drop-shadow-sm whitespace-nowrap">
+                Fleur Marwa
               </span>
-            </button>
+            </div>
+
+            <nav className="hidden md:flex items-center gap-5 lg:gap-8">
+              {navItems.map(({ name, path, icon: Icon }) => {
+                const active = isActive(path);
+                return (
+                  <button
+                    key={name}
+                    onClick={() => handleNavigation(path)}
+                    className={`group relative text-sm font-display font-semibold uppercase tracking-wider transition-all duration-300 flex items-center gap-1.5 ${
+                      active
+                        ? "text-amber-600 drop-shadow-sm"
+                        : "text-slate-600 hover:text-amber-500"
+                    }`}
+                  >
+                    <Icon size={16} strokeWidth={active ? 2.2 : 1.5} className="transition-transform duration-200 group-hover:scale-110" />
+                    {name}
+                    <span className={`absolute -bottom-2 left-0 h-0.5 bg-gradient-to-r from-amber-400 to-amber-500 transition-all duration-300 rounded-full ${
+                      active ? "w-full opacity-100" : "w-0 opacity-0 group-hover:w-full group-hover:opacity-100"
+                    }`} />
+                  </button>
+                );
+              })}
+            </nav>
+          </div>
+
+          <div className="flex items-center gap-3 md:gap-5">
+            <div className="hidden md:block w-96">
+              <SearchBar />
+            </div>
+
+            <div className="flex items-center gap-2 md:gap-3">
+              {!loading && (
+                <button
+                  onClick={() => router.push(isLoggedIn ? "/profile" : "/login")}
+                  className="p-2 text-slate-600 transition-all duration-200 rounded-full hover:bg-white/60 hover:text-amber-600 hover:scale-110 active:scale-95"
+                  aria-label="Account"
+                >
+                  <User size={20} strokeWidth={1.5} />
+                </button>
+              )}
+              <button
+                onClick={() => setCartDrawerOpen(true)}
+                className="relative p-2 text-slate-700 transition-all duration-200 rounded-full hover:bg-white/60 hover:text-amber-600 hover:scale-110 active:scale-95"
+                aria-label="Shopping cart"
+              >
+                <ShoppingCart size={22} strokeWidth={1.5} />
+                <span className="absolute -top-1 -right-1 bg-amber-500 text-white text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center shadow-lg ring-2 ring-white/80">
+                  {cartCount > 0 ? (cartCount > 9 ? '9+' : cartCount) : 0}
+                </span>
+              </button>
+              <button
+                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                className="md:hidden p-2 text-slate-700 rounded-full hover:bg-white/60 active:scale-95 transition-all"
+                aria-label="Menu"
+              >
+                {mobileMenuOpen ? <X size={22} /> : <Menu size={22} />}
+              </button>
+            </div>
           </div>
         </div>
-
-        {/* Desktop Bottom Nav */}
-        <nav className="hidden md:flex justify-center items-center gap-10 py-3 border-t border-gray-50">
-          {navItems.map(({ name, path }) => {
-            const isActive = path.startsWith("#") ? activeHash === path : pathname === path && activeHash === "";
-            return (
-              <button
-                key={name}
-                onClick={() => handleNavigation(path)}
-                className={`group relative text-[11px] font-bold uppercase tracking-[0.2em] transition-colors duration-300 ${
-                  isActive ? "text-[#c9a96e]" : "text-gray-500 hover:text-gray-900"
-                }`}
-              >
-                {name}
-                <span
-                  className={`absolute -bottom-1.5 left-0 h-0.5 bg-[#c9a96e] transition-all duration-300 ${
-                    isActive ? "w-full" : "w-0 group-hover:w-full"
-                  }`}
-                />
-              </button>
-            );
-          })}
-        </nav>
       </div>
 
-      {/* Mobile Drawer */}
       <div
-        className={`fixed inset-0 top-0 w-full h-screen bg-black/40 backdrop-blur-sm z-110 transition-opacity duration-500 md:hidden ${
-          mobileMenuOpen ? "opacity-100 visible" : "opacity-0 invisible"
+        className={`fixed inset-0 w-full h-screen bg-black/40 backdrop-blur-md z-50 transition-all duration-500 md:hidden ${
+          mobileMenuOpen ? "opacity-100 visible" : "opacity-0 invisible pointer-events-none"
         }`}
         onClick={() => setMobileMenuOpen(false)}
       >
         <div
-          className={`absolute left-0 top-0 w-[85%] max-w-90 h-full bg-white shadow-2xl transition-transform duration-500 ease-[cubic-bezier(0.32,0,0.07,1)] ${
+          className={`absolute left-0 top-0 w-[85%] max-w-sm h-full bg-white/95 backdrop-blur-sm shadow-2xl transition-transform duration-500 ease-out ${
             mobileMenuOpen ? "translate-x-0" : "-translate-x-full"
           }`}
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="p-8 flex flex-col h-full">
-            <div className="flex justify-between items-center mb-10">
-              <span className="font-black text-xl tracking-tighter">
-                ABDO<span className="text-[#c9a96e]">STORE</span>
-              </span>
-              <button
-                onClick={() => setMobileMenuOpen(false)}
-                className="p-2 bg-gray-50 rounded-full"
-              >
+          <div className="flex flex-col h-full">
+            <div className="flex justify-between items-center p-5 border-b border-slate-100">
+              <div className="flex items-center gap-2 cursor-pointer" onClick={() => handleNavigation("/", true)}>
+                <div className="relative w-8 h-8 rounded-full overflow-hidden ring-1 ring-amber-200">
+                  <Image src="/photos/image.png" alt="Fleur Marwa" fill className="object-cover" />
+                </div>
+                <span className="font-serif italic font-bold bg-gradient-to-r from-amber-600 to-amber-500 bg-clip-text text-transparent">
+                  Fleur Marwa
+                </span>
+              </div>
+              <button onClick={() => setMobileMenuOpen(false)} className="p-2 bg-slate-50 rounded-full hover:bg-slate-100 transition">
                 <X size={20} />
               </button>
             </div>
 
-            <nav className="flex flex-col gap-2">
+            <div className="p-4">
+              <SearchBar />
+            </div>
+
+            <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
               {navItems.map(({ name, path, icon: Icon }) => {
-                const isActive = path.startsWith("#") ? activeHash === path : pathname === path && activeHash === "";
+                const active = isActive(path);
                 return (
                   <button
                     key={name}
                     onClick={() => handleNavigation(path, true)}
-                    className={`flex items-center gap-5 p-4 rounded-2xl font-bold uppercase tracking-widest text-xs transition-all duration-300 ${
-                      isActive
-                        ? "bg-[#c9a96e] text-white shadow-lg shadow-[#c9a96e]/20"
-                        : "bg-gray-50 text-gray-700 hover:bg-gray-100"
+                    className={`flex items-center gap-4 w-full p-4 rounded-xl font-display font-bold uppercase tracking-wide text-sm transition-all duration-200 ${
+                      active
+                        ? "bg-amber-500 text-white shadow-md"
+                        : "text-slate-700 hover:bg-slate-100 hover:translate-x-1"
                     }`}
                   >
-                    <Icon size={18} strokeWidth={isActive ? 2.5 : 1.5} />
+                    <Icon size={18} strokeWidth={active ? 2.5 : 1.5} />
                     {name}
                   </button>
                 );
               })}
             </nav>
 
-            <div className="mt-auto pt-8 border-t border-gray-100 space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                {!loading && (
-                  <button
-                    onClick={() => {
-                      if (isLoggedIn) router.push("/profile");
-                      else router.push("/login");
-                      setMobileMenuOpen(false);
-                    }}
-                    className="flex flex-col items-center gap-2 py-5 bg-gray-50 rounded-2xl hover:bg-gray-100 transition-colors"
-                  >
-                    <User size={20} className="text-[#c9a96e]" />
-                    <span className="text-[10px] font-bold text-gray-500 uppercase">
-                      {isLoggedIn ? "Profile" : "Login"}
-                    </span>
-                  </button>
-                )}
-                <button className="flex flex-col items-center gap-2 py-5 bg-gray-50 rounded-2xl hover:bg-gray-100 transition-colors">
-                  <Globe size={20} className="text-[#c9a96e]" />
-                  <span className="text-[10px] font-bold text-gray-500 uppercase">
-                    English
-                  </span>
-                </button>
-              </div>
+            <div className="p-5 border-t border-slate-100 space-y-3">
+              <button
+                onClick={() => {
+                  if (isLoggedIn) router.push("/profile");
+                  else router.push("/login");
+                  setMobileMenuOpen(false);
+                }}
+                className="flex items-center justify-center gap-2 w-full py-2.5 bg-slate-50 rounded-xl hover:bg-slate-100 transition-all"
+              >
+                <User size={18} className="text-amber-600" />
+                <span className="text-sm font-medium text-slate-700">{isLoggedIn ? "Profile" : "Login"}</span>
+              </button>
+              <button
+                onClick={() => {
+                  setCartDrawerOpen(true);
+                  setMobileMenuOpen(false);
+                }}
+                className="flex items-center justify-center gap-2 w-full py-2.5 bg-slate-50 rounded-xl hover:bg-slate-100 transition-all"
+              >
+                <ShoppingCart size={18} className="text-amber-600" />
+                <span className="text-sm font-medium text-slate-700">
+                  Cart {cartCount > 0 && `(${cartCount})`}
+                </span>
+              </button>
             </div>
           </div>
         </div>
       </div>
+
+      <CartDrawer isOpen={cartDrawerOpen} onClose={() => setCartDrawerOpen(false)} />
     </header>
   );
 }

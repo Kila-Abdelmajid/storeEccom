@@ -1,7 +1,6 @@
-// app/components/ProductSection.tsx
 'use client';
 
-import React, { useRef, useState, useEffect, useCallback } from 'react';
+import { useRef, useState, useEffect, useCallback } from 'react';
 import { Product } from '@/types/product';
 import { ProductCard } from './ProductCard';
 import { Category } from '@/types/category';
@@ -14,92 +13,130 @@ interface CategorySectionProps {
   products: Product[];
 }
 
+// Helper to generate a subtle tagline based on category name
+const getCategoryTagline = (categoryName: string) => {
+  const taglines: Record<string, string> = {
+    'New Arrivals': 'Fresh from the atelier',
+    'Bestsellers': 'Customer favourites',
+    'Accessories': 'The finishing touch',
+    'Home & Living': 'Elevate your space',
+    'Men': 'Modern masculinity',
+    'Women': 'Timeless femininity',
+  };
+  return taglines[categoryName] || 'Curated selection';
+};
+
 const CategorySection = ({ category, products }: CategorySectionProps) => {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [showLeftArrow, setShowLeftArrow] = useState(false);
-  const [isAtEnd, setIsAtEnd] = useState(false);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(true);
 
-  const scroll = (direction: 'left' | 'right') => {
-    if (!scrollRef.current) return;
-    const containerWidth = scrollRef.current.clientWidth;
-    const isMobile = window.innerWidth < 768;
-    const cardWidth = isMobile ? containerWidth : containerWidth / 4;
-    scrollRef.current.scrollBy({
-      left: direction === 'left' ? -cardWidth : cardWidth,
-      behavior: 'smooth',
-    });
-  };
-
-  const handleScrollStatus = useCallback(() => {
-    if (!scrollRef.current) return;
-    const { scrollLeft, scrollWidth, clientWidth } = scrollRef.current;
-    setShowLeftArrow(scrollLeft > 10);
-    setIsAtEnd(scrollLeft + clientWidth >= scrollWidth - 10);
+  const updateArrows = useCallback(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+    const scrollLeft = container.scrollLeft;
+    const maxScroll = container.scrollWidth - container.clientWidth;
+    setCanScrollLeft(scrollLeft > 5);
+    setCanScrollRight(scrollLeft + 5 < maxScroll);
   }, []);
 
   useEffect(() => {
-    const el = scrollRef.current;
-    if (el) {
-      el.addEventListener('scroll', handleScrollStatus);
-      handleScrollStatus();
-      return () => el.removeEventListener('scroll', handleScrollStatus);
-    }
-  }, [handleScrollStatus]);
+    const container = scrollRef.current;
+    if (!container) return;
+    container.addEventListener('scroll', updateArrows);
+    window.addEventListener('resize', updateArrows);
+    updateArrows();
+    return () => {
+      container.removeEventListener('scroll', updateArrows);
+      window.removeEventListener('resize', updateArrows);
+    };
+  }, [updateArrows]);
+
+  const scroll = (direction: 'left' | 'right') => {
+    if (!scrollRef.current) return;
+    const firstChild = scrollRef.current.children[0] as HTMLElement;
+    if (!firstChild) return;
+    const itemWidth = firstChild.offsetWidth + 16; // gap-4 = 16px
+    const scrollAmount = direction === 'left' ? -itemWidth : itemWidth;
+    scrollRef.current.scrollBy({ left: scrollAmount, behavior: 'smooth' });
+  };
 
   if (products.length === 0) return null;
 
+  const tagline = getCategoryTagline(category.name);
+
   return (
-    <section className="mb-24 relative px-4 md:px-12">
+    <section className="mb-20 relative px-4">
+      {/* Category header with gold accent and elegant tagline */}
       <div className="flex items-center justify-between mb-8">
-        <h2 className="text-3xl font-bold text-gray-900 border-l-4 border-[#c9a96e] pl-4">
-          {category.name}
-        </h2>
-        <Link href={`/categories/${category.name}`}>
-          <AppButton variant="primary">see all products</AppButton>
+        <div className="group">
+          <div className="flex items-baseline gap-3 flex-wrap">
+            <h2 className="text-xl md:text-2xl font-light text-gray-800 border-l-4 border-amber-500 pl-4 transition-all group-hover:border-amber-600">
+              {category.name}
+            </h2>
+            <span className="text-xs text-gray-400 italic hidden sm:inline">
+              {tagline}
+            </span>
+          </div>
+          <div className="w-12 h-px bg-amber-300 mt-2 group-hover:w-24 transition-all duration-500" />
+        </div>
+        <Link href={`/Categories/${category.slug}`}>
+          <AppButton
+            variant="primary"
+            className="rounded-full px-4 py-1.5 text-xs"
+          >
+            View all <span className="ml-1">→</span>
+          </AppButton>
         </Link>
       </div>
 
-      <div className="relative group">
-        <button
-          onClick={() => scroll('left')}
-          className={`absolute -left-6 top-1/2 -translate-y-1/2 z-40 p-3 rounded-full bg-white shadow-xl text-gray-800 transition-all hover:bg-[#c9a96e] hover:text-white ${
-            !showLeftArrow ? 'opacity-0 invisible' : 'opacity-100 visible'
-          }`}
-          aria-label="Scroll left"
-        >
-          <ChevronLeftIcon className="w-6 h-6" />
-        </button>
-
-        <button
-          onClick={() => scroll('right')}
-          className={`absolute -right-6 top-1/2 -translate-y-1/2 z-40 p-3 rounded-full bg-white shadow-xl text-gray-800 transition-all hover:bg-[#c9a96e] hover:text-white ${
-            isAtEnd ? 'opacity-0 invisible' : 'opacity-100 visible'
-          }`}
-          aria-label="Scroll right"
-        >
-          <ChevronRightIcon className="w-6 h-6" />
-        </button>
-
+      {/* Carousel with arrows always visible (disabled at ends) */}
+      <div className="relative group -mx-4">
+        {/* Scroll container with negative margin to eliminate outer padding */}
         <div
           ref={scrollRef}
-          className="flex overflow-x-auto scrollbar-hide snap-x snap-mandatory scroll-smooth"
-          style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+          className="flex overflow-x-auto gap-4 pb-4 pt-2 px-4 scroll-smooth"
+          style={{
+            scrollbarWidth: 'none',
+            msOverflowStyle: 'none',
+            scrollSnapType: 'x mandatory',
+          }}
         >
           {products.map((product) => (
             <div
               key={product.id}
-              className="flex-shrink-0 w-full md:w-1/4 px-2 snap-start"
+              className="flex-shrink-0 w-full sm:w-1/2 md:w-1/3 lg:w-1/4 snap-start"
             >
-              <ProductCard product={product} categoryName={category.name} />
+              <ProductCard product={product} />
             </div>
           ))}
         </div>
+
+        {/* Left Arrow */}
+        <button
+          onClick={() => scroll('left')}
+          disabled={!canScrollLeft}
+          className="absolute -left-4 md:-left-6 top-1/2 -translate-y-1/2 z-20 flex items-center justify-center w-9 h-9 md:w-11 md:h-11 rounded-full bg-white/80 backdrop-blur-md shadow-lg text-gray-700 transition-all duration-300 hover:bg-amber-500 hover:text-white hover:scale-110 focus:outline-none focus:ring-2 focus:ring-amber-400/50 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:bg-white/80"
+          aria-label="Scroll left"
+        >
+          <ChevronLeftIcon className="w-4 h-4 md:w-5 md:h-5" />
+        </button>
+
+        {/* Right Arrow */}
+        <button
+          onClick={() => scroll('right')}
+          disabled={!canScrollRight}
+          className="absolute -right-4 md:-right-6 top-1/2 -translate-y-1/2 z-20 flex items-center justify-center w-9 h-9 md:w-11 md:h-11 rounded-full bg-white/80 backdrop-blur-md shadow-lg text-gray-700 transition-all duration-300 hover:bg-amber-500 hover:text-white hover:scale-110 focus:outline-none focus:ring-2 focus:ring-amber-400/50 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:bg-white/80"
+          aria-label="Scroll right"
+        >
+          <ChevronRightIcon className="w-4 h-4 md:w-5 md:h-5" />
+        </button>
       </div>
     </section>
   );
 };
 
-export default  function ProductSection() {
+export default function ProductSection() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -118,7 +155,6 @@ export default  function ProductSection() {
         const productsData = await productsRes.json();
         const categoriesData = await categoriesRes.json();
 
-        // Normalise products: ensure numeric fields and categoryId is number
         const enrichedProducts = productsData.map((p: any) => ({
           ...p,
           id: Number(p.id),
@@ -143,11 +179,15 @@ export default  function ProductSection() {
   }, []);
 
   if (loading) {
-    return <div className="text-center py-20 text-gray-500">Loading products...</div>;
+    return (
+      <div className="flex justify-center items-center py-32">
+        <div className="w-12 h-12 border-4 border-amber-200 border-t-amber-600 rounded-full animate-spin" />
+      </div>
+    );
   }
   if (error) {
     return (
-      <div className="text-center py-20 text-red-600">
+      <div className="text-center py-20 text-rose-600">
         {error}{' '}
         <button onClick={() => window.location.reload()} className="ml-2 underline">
           Retry
@@ -156,7 +196,6 @@ export default  function ProductSection() {
     );
   }
 
-  // Group products by categoryId – now categoryId is guaranteed number
   const productsByCategory = products.reduce(
     (acc, product) => {
       const key = product.categoryId;
@@ -172,19 +211,27 @@ export default  function ProductSection() {
   );
 
   return (
-    <div className="bg-[#FFFFFF] py-24">
-      <div className="max-w-[1500px] mx-auto overflow-hidden">
-        <div className="px-6 md:px-12 mb-24 text-center">
-          <span className="inline-block px-4 py-1.5 mb-6 text-[10px] font-bold tracking-[0.4em] uppercase bg-gray-50 text-gray-400 rounded-full border border-gray-100">
+    <div className="bg-white py-16 overflow-hidden">
+      <div className="max-w-7xl mx-auto px-4">
+        {/* Global header */}
+        <div className="text-center mb-14">
+          <span className="inline-block px-4 py-1 mb-5 text-[10px] font-bold tracking-[0.3em] uppercase bg-white/80 text-amber-600 rounded-full border border-amber-200/50 shadow-sm backdrop-blur-sm">
             Exclusive Selection
           </span>
-          <h1 className="text-5xl md:text-7xl font-light text-gray-900 mb-6">
-            Discover <span className="font-serif italic text-[#c9a96e]">Elegance</span>
+          <h1 className="text-4xl md:text-5xl lg:text-6xl font-light text-gray-900 mb-4 tracking-tight">
+            Discover{' '}
+            <span className="font-serif italic bg-gradient-to-r from-amber-600 to-amber-500 bg-clip-text text-transparent">
+              Elegance
+            </span>
           </h1>
-          <div className="h-px w-24 bg-gray-200 mx-auto" />
+          <div className="w-20 h-px bg-gradient-to-r from-transparent via-amber-400 to-transparent mx-auto" />
+          <p className="text-gray-500 mt-5 max-w-md mx-auto text-sm">
+            Timeless pieces, curated for the modern connoisseur
+          </p>
         </div>
 
-        <div className="space-y-12">
+        {/* Sections per category */}
+        <div className="space-y-16">
           {activeCategories.map((category) => (
             <CategorySection
               key={category.id}

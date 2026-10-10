@@ -1,35 +1,37 @@
-// components/ProductCard.tsx
 'use client';
 
 import Image from 'next/image';
 import { useState } from 'react';
 import { Product } from '@/types/product';
-import {
-  ShoppingCartIcon,
-  EyeIcon,
-  HeartIcon,
-  ArrowsPointingOutIcon,
-} from '@heroicons/react/24/outline';
+import { ShoppingCartIcon, EyeIcon, ArrowsPointingOutIcon } from '@heroicons/react/24/outline';
+import { HeartIcon as HeartOutline } from '@heroicons/react/24/outline';
+import { HeartIcon as HeartSolid } from '@heroicons/react/24/solid';
 import { formatPrice } from '@/utils/format';
 import { RatingStars } from '@/components/ui/RatingStars';
 import { ProductImageModal } from '@/components/ProductImageModal';
 import { AppButton } from '../../ui/AppButton';
 import Link from 'next/link';
+import { useToast } from '@/contexts/ToastContext';
+import { triggerCartUpdate } from '@/lib/cartEvents';
+import { useFavorites } from '@/contexts/FavoritesContext';
+import * as cartStorage from '@/lib/cartStorage'; // 👈 import
+import { useAuth } from '@/hooks/useAuth';
+
 
 interface ProductCardProps {
   product: Product;
-  categoryName?: string;
-  onAddToCart?: (product: Product) => void;
 }
 
-export const ProductCard = ({
-  product,
-  categoryName = 'Premium',
-  onAddToCart,
-}: ProductCardProps) => {
-  const [isImageModalOpen, setIsImageModalOpen] = useState(false);
+export const ProductCard = ({ product }: ProductCardProps) => {
+    const { session } = useAuth(); // 👈 get session
 
-  // Safe numeric values
+  const [isImageModalOpen, setIsImageModalOpen] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const { favorites, toggleFavorite, isLoading: favoritesLoading } = useFavorites();
+  const { showToast } = useToast();
+
+  const isFavorite = favorites.has(product.id);
+
   const price = Number(product.price) || 0;
   const oldPrice = product.oldPrice ? Number(product.oldPrice) : null;
   const discountPercent = oldPrice && oldPrice > price
@@ -39,6 +41,49 @@ export const ProductCard = ({
   const isInStock = (product.stock ?? 0) > 0;
   const rating = typeof product.rating === 'number' ? product.rating : 0;
   const reviews = typeof product.reviews === 'number' ? product.reviews : 0;
+
+  const handleAddToCart = async () => {
+    if (!isInStock) return;
+    setAdding(true);
+
+    try {
+      if (session) {
+        // Logged in user: use API
+        const res = await fetch('/api/ClientApi/cart', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ productId: product.id, quantity: 1 }),
+        });
+        if (!res.ok) {
+          const error = await res.json();
+          throw new Error(error.error || 'Failed to add');
+        }
+        showToast(`${product.name} added to cart`, 'success');
+      } else {
+        // Guest: store in localStorage
+        cartStorage.addToGuestCart({
+          productId: product.id,
+          name: product.name,
+          price: product.price,
+          image: product.image,
+          stock: product.stock,
+        });
+        showToast(`${product.name} added to cart`, 'success');
+      }
+      triggerCartUpdate(); // update badge and drawer
+    } catch (err: any) {
+      showToast(err.message || 'Failed to add', 'error');
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const handleToggleFavorite = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (favoritesLoading) return;
+    await toggleFavorite(product.id);
+  };
 
   return (
     <>
@@ -56,8 +101,17 @@ export const ProductCard = ({
           </div>
 
           <div className="absolute top-14 right-4 z-10 flex flex-col gap-2">
-            <button className="p-2.5 bg-white shadow-md rounded-full text-gray-400 hover:text-rose-500 transition-all border border-gray-50">
-              <HeartIcon className="w-5 h-5" />
+            <button
+              onClick={handleToggleFavorite}
+              disabled={favoritesLoading}
+              className="p-2.5 bg-white shadow-md rounded-full text-gray-400 hover:text-rose-500 transition-all border border-gray-50"
+              title={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+            >
+              {isFavorite ? (
+                <HeartSolid className="w-5 h-5 text-rose-500" />
+              ) : (
+                <HeartOutline className="w-5 h-5" />
+              )}
             </button>
             <button
               onClick={() => setIsImageModalOpen(true)}
@@ -81,7 +135,7 @@ export const ProductCard = ({
         <div className="p-5 space-y-3">
           <div>
             <p className="text-[#c9a96e] text-[10px] font-bold uppercase tracking-widest">
-              {categoryName}
+              {product.category}
             </p>
             <h3 className="text-gray-900 text-base font-bold truncate mt-1">
               {product.name}
@@ -108,13 +162,13 @@ export const ProductCard = ({
 
             <AppButton
               variant="primary"
-              className="flex-[2.5] bg-gray-900 hover:bg-black text-white rounded-xl shadow-lg shadow-gray-200 active:scale-95 transition-all"
-              disabled={!isInStock}
-              onClick={() => onAddToCart?.(product)}
+              className="flex-[2.5]  text-white rounded-xl shadow-lg shadow-gray-200 active:scale-95 transition-all"
+              disabled={!isInStock || adding}
+              onClick={handleAddToCart}
             >
               <ShoppingCartIcon className="w-5 h-5 mr-2" />
               <span className="text-[11px] font-bold uppercase tracking-widest">
-                {isInStock ? 'Add' : 'Out of stock'}
+                {adding ? 'Adding...' : isInStock ? 'Add' : 'Out of stock'}
               </span>
             </AppButton>
           </div>

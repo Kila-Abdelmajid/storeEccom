@@ -1,33 +1,28 @@
 'use client';
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Bot, MessageSquareMore, ChevronUp } from 'lucide-react';
+import { X, Plus, ChevronUp } from 'lucide-react';
 import { FaFacebookF, FaInstagram, FaWhatsapp } from 'react-icons/fa';
 
 const FloatingMenu = () => {
   const [isOpen, setIsOpen] = useState(false);
 
   const actions = [
-    { icon: <Bot size={20} />, color: 'bg-[#c9a96e]', label: 'AI Chat', href: '#ai' },
     { icon: <FaWhatsapp size={20} />, color: 'bg-[#25D366]', label: 'WhatsApp', href: 'https://wa.me/212600000000' },
     { icon: <FaInstagram size={20} />, color: 'bg-[#E1306C]', label: 'Instagram', href: 'https://instagram.com/' },
     { icon: <FaFacebookF size={20} />, color: 'bg-[#1877F2]', label: 'Facebook', href: 'https://facebook.com/' },
   ];
 
   return (
-    /* Logic d l-blassa:
-       - Desktop: bottom-[90px] (Fouq Crisp)
-       - Mobile: bottom-[80px] (Hit Crisp f mobile kiy-tsgher chwiya)
-    */
     <div className="fixed bottom-[85px] md:bottom-[95px] right-4 md:right-6 z-[999] flex flex-col-reverse items-center gap-3">
       
-      {/* Main Trigger Button - Beddelna l-icon l-MessageSquareMore */}
+      {/* Main Trigger Button - Gold Gradient + Plus Icon */}
       <motion.button
         whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.9 }}
         onClick={() => setIsOpen(!isOpen)}
         className={`w-12 h-12 md:w-14 md:h-14 rounded-2xl flex items-center justify-center shadow-2xl border-2 border-white transition-all duration-300 ${
-          isOpen ? 'bg-black text-white' : 'bg-[#c9a96e] text-white'
+          isOpen ? 'bg-black text-white' : 'bg-gradient-to-r from-amber-500 to-amber-600 text-white'
         }`}
       >
         <AnimatePresence mode="wait">
@@ -48,8 +43,7 @@ const FloatingMenu = () => {
               exit={{ opacity: 0, scale: 0.5 }}
               className="flex flex-col items-center"
             >
-              <MessageSquareMore size={24} />
-              <ChevronUp size={14} className="animate-bounce -mt-1" />
+              <Plus size={24} strokeWidth={2} />
             </motion.div>
           )}
         </AnimatePresence>
@@ -79,7 +73,7 @@ const FloatingMenu = () => {
               >
                 {action.icon}
                 
-                {/* Tooltip - Makhiy-ban f mobile bach may-mrekhch l-view */}
+                {/* Tooltip */}
                 <span className="hidden md:block absolute right-16 bg-black/80 backdrop-blur-md text-white text-[10px] font-bold px-3 py-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-xl">
                   {action.label}
                 </span>

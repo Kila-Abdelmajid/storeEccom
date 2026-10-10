@@ -5,10 +5,10 @@ CREATE TABLE users (
     lastName VARCHAR(50) NOT NULL,
     email VARCHAR(191) UNIQUE NOT NULL,
     password VARCHAR(255) NOT NULL,
-    phone VARCHAR(20),
     role VARCHAR(20) DEFAULT 'user', -- PostgreSQL k-t-fdel VARCHAR m3a CHECK f blasst ENUM
     createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT chk_role CHECK (role IN ('admin', 'user'))
+    is verified  BOOLEAN,
 );
 
 -- 2. Categories
@@ -96,8 +96,17 @@ CREATE TABLE clientReviews (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255),
     rating INTEGER CHECK (rating >= 1 AND rating <= 5),
-    title VARCHAR(255),
     content TEXT,
     verified BOOLEAN DEFAULT false,
     createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE cart_items (
+    cartItemsId SERIAL PRIMARY KEY,
+    userId INT NOT NULL REFERENCES users(userId) ON DELETE CASCADE,
+    productId INT NOT NULL REFERENCES products(productId) ON DELETE CASCADE,
+    quantity INT NOT NULL DEFAULT 1,
+    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(userId, productId) -- éviter doublons
 );

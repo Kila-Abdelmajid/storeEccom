@@ -1,4 +1,5 @@
 export type Review = {
+  userEmail: import("react/jsx-runtime").JSX.Element;
   id: number;           // reviewId
   userId: number;
   userName: string;     // firstName + lastName from users table

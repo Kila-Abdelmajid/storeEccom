@@ -163,7 +163,7 @@ export async function PUT(request: Request) {
 
 // Add this inside your existing route.ts (after imports)
 
-// --- GET: Return all products + additional images (single query, no prepared statement issues) ---
+// GET active products (is_deleted = false)
 export async function GET() {
   try {
     const products = await sql`
@@ -178,12 +178,14 @@ export async function GET() {
         p.isnew as "isNew",
         p.categoryid as "categoryId",
         c.categoryname as category,
+        c.is_deleted as "categoryDeleted",
         COALESCE(
           (SELECT json_agg(imagepath) FROM productimages WHERE productid = p.productid),
           '[]'::json
         ) as "additionalImages"
       FROM products p
       LEFT JOIN categories c ON p.categoryid = c.categoryid
+      WHERE p.is_deleted = false
       ORDER BY p.createdat DESC
     `;
 
@@ -193,6 +195,7 @@ export async function GET() {
       price: Number(p.price),
       oldPrice: p.oldPrice ? Number(p.oldPrice) : null,
       stock: Number(p.stock),
+      categoryDeleted: p.categoryDeleted || false,
     }));
 
     return NextResponse.json(formatted);
@@ -202,37 +205,25 @@ export async function GET() {
   }
 }
 
-// --- DELETE: Remove product and its images (files + DB) ---
+// DELETE (soft delete) – manual archive (archived_by_category = false)
 export async function DELETE(request: Request) {
   try {
-
-     const session = await getSession();
-      if (!session) {
-        return NextResponse.json({ error: "Unauthorized – no session" }, { status: 401 });
-      }
-      const userId = session.userId;
+    const session = await getSession();
+    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
     if (!id) return NextResponse.json({ error: 'Product ID required' }, { status: 400 });
 
-    // Optional: delete physical image files from uploads folder
-    // 1. Get product images paths
-    const images = await sql`SELECT productimage as path FROM products WHERE productid = ${parseInt(id)}`;
-    const additional = await sql`SELECT imagepath as path FROM productimages WHERE productid = ${parseInt(id)}`;
-    const allPaths = [...images, ...additional].map(row => row.path);
-    // Delete files (optional)
-    for (const filePath of allPaths) {
-      const fullPath = path.join(process.cwd(), 'public', filePath);
-      try { await unlink(fullPath); } catch(e) { /* ignore */ }
-    }
+    await sql`
+      UPDATE products
+      SET is_deleted = true, deleted_at = NOW(), archived_by_category = false
+      WHERE productid = ${parseInt(id)} AND is_deleted = false
+    `;
 
-    // 2. Delete from DB (cascade will remove productimages and reviews)
-    await sql`DELETE FROM products WHERE productid = ${parseInt(id)} `;
-
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, message: 'Product archived' });
   } catch (error) {
     console.error(error);
-    return NextResponse.json({ error: 'Delete failed' }, { status: 500 });
+    return NextResponse.json({ error: 'Archive failed' }, { status: 500 });
   }
 }

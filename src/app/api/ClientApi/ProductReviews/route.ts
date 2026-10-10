@@ -17,6 +17,7 @@ export async function GET(request: NextRequest) {
         r.reviewid as id,
         r.userid as "userId",
         CONCAT(u.firstname, ' ', u.lastname) as "userName",
+        u.email as "userEmail",
         r.rating,
         r.comment,
         r.createdat as "createdAt",

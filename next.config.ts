@@ -3,7 +3,7 @@ import type { NextConfig } from 'next'
 const isDev = process.env.NODE_ENV === 'development'
 
 module.exports = {
-  allowedDevOrigins: ['192.168.56.1'],
+  allowedDevOrigins: ['192.168.56.1', 'localhost', '4kbc18sg-3000.uks1.devtunnels.ms', ],
 }
 const ContentSecurityPolicy = `
   default-src 'self';
@@ -46,6 +46,7 @@ const nextConfig: NextConfig = {
 
   experimental: {
     optimizePackageImports: ['lucide-react'],
+    
   },
   
 }

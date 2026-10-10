@@ -1,7 +1,5 @@
-import { getSession } from '@/lib/auth'
+import DashboardPage from './DashboardPage'
 
 export default async function Dashboard() {
-  const session = await getSession()
-  if (!session) return <div>Not authenticated</div>
-  return <> this a dashboard and the user id is :{session.userId}</>
+  return <DashboardPage />
 }

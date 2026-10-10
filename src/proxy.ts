@@ -1,45 +1,56 @@
+// middleware.ts (في جذر المشروع، خارج مجلد app)
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { getSession } from '@/lib/auth';
+import { jwtVerify } from 'jose';
+
+const secretKey = process.env.JWT_SECRET || 'your-secret-key';
+const key = new TextEncoder().encode(secretKey);
 
 export async function proxy(request: NextRequest) {
-  const session = await getSession();
+  const token = request.cookies.get('session')?.value;
   const { pathname } = request.nextUrl;
 
-  
-  // Define protected admin routes
-  const adminRoutes = ['/Dashboard', '/api/users', '/api/categories', '/api/product'];
+  // المسارات المحمية
+  const adminRoutes = ['/Dashboard','/productsManagement','/ordersManagement','/categoriesManagement','/messagesManagement','/usersManagement','/clientReviewsManagement'];
   const isAdminRoute = adminRoutes.some(route => pathname.startsWith(route));
-  
-  // Also protect any route that starts with /Dashboard (all dashboard pages)
-  const isDashboardPage = pathname.startsWith('/Dashboard');
+  const userPages = ['/profile', '/orders', '/cart'];
+  const isUserPage = userPages.some(page => pathname === page);
 
-  if ((isAdminRoute || isDashboardPage) && !session) {
-    // Not logged in – redirect to login
-    const url = new URL('/login', request.url);
-    return NextResponse.redirect(url);
+  // الصفحات العمومية لا تحتاج حماية
+  if (!isAdminRoute && !isUserPage) {
+    return NextResponse.next();
   }
 
-  if ((isAdminRoute || isDashboardPage) && session?.role !== 'admin') {
-      console.log('Redirecting to login: no session');
-
-    // Logged in but not admin – redirect to homepage
-    const url = new URL('/', request.url);
-    return NextResponse.redirect(url);
+  // إذا لم يكن هناك توكن، التوجيه إلى تسجيل الدخول
+  if (!token) {
+    const loginUrl = new URL('/login', request.url);
+    loginUrl.searchParams.set('callbackUrl', pathname);
+    return NextResponse.redirect(loginUrl);
   }
 
-  // Also optionally protect user API endpoints that require logged-in user
-  // (e.g., /api/orders, /api/profile) – check session exists but any role
-
-  return NextResponse.next();
+  // التحقق من صحة التوكن (هنا token مؤكد أنه string)
+  try {
+    const { payload } = await jwtVerify(token, key);
+    if (isAdminRoute && payload.role !== 'admin') {
+      return NextResponse.redirect(new URL('/', request.url));
+    }
+    return NextResponse.next();
+  } catch {
+    const loginUrl = new URL('/login', request.url);
+    loginUrl.searchParams.set('callbackUrl', pathname); // Ta hna f l-error d token
+    return NextResponse.redirect(loginUrl);  }
 }
 
 export const config = {
   matcher: [
     '/Dashboard/:path*',
-    '/api/users/:path*',
-    '/api/categories/:path*',
-    '/api/product/:path*',
-    // add other admin APIs
+    '/productsManagement/:path*',
+    '/ordersManagement/:path*',
+    '/categoriesManagement/:path*',
+    '/messagesManagement/:path*',
+    '/usersManagement/:path*',
+    '/clientReviewsManagement/:path*',
+    '/profile',
+    '/cart',
   ],
 };

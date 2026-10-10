@@ -3,7 +3,6 @@ import React from 'react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
-// Helper function bach n-manage-iw l-classes (ila knti m-installi tailwind-merge)
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
@@ -22,27 +21,26 @@ export const AppButton = ({
   ...props 
 }: AppButtonProps) => {
   
-  // 1. Base styles (li kyt-3awdo dima)
   const baseStyles = "relative overflow-hidden font-medium rounded-full transition-all duration-300 active:scale-95 flex items-center justify-center gap-2 tracking-wide";
   
-  // 2. Variants logic (khdina l-alwan mn l-Hero Slider dyalk)
   const variants = {
-    // Dak l-lon l-gold li bghiti f Hero
-    primary: "bg-linear-to-br from-[#c9a96e] to-[#b58b4a] text-[#1e1a14] shadow-md hover:shadow-xl hover:-translate-y-0.5 filter hover:brightness-110",
+    // Elegant gold gradient – identical to the hero slider button
+    primary: "group relative overflow-hidden px-6 py-3 rounded-full bg-gradient-to-r from-amber-600 to-amber-700 text-white font-medium shadow-lg transition-all duration-300 hover:shadow-amber-500/20 hover:scale-105 active:scale-95",
     
-    // Dak l-border white transparent
-    outline: "bg-transparent border-[1.5px] border-white/60 text-white backdrop-blur-sm hover:bg-white/15 hover:border-white hover:-translate-y-0.5 shadow-sm",
+    // Gold outline – becomes solid gold on hover (like hero button hover)
+    outline: "border-2 border-[#c9a96e] text-[#c9a96e] bg-transparent hover:bg-[#c9a96e] hover:text-white transition-all",
     
-    // Anwa3 khrin (optional)
-    danger: "bg-rose-600 text-white hover:bg-rose-700",
-    ghost: "bg-transparent hover:bg-white/10 text-white/80",
+    // Danger – soft rose gradient
+    danger: "bg-gradient-to-r from-rose-500 to-rose-600 text-white hover:from-rose-600 hover:to-rose-700 shadow-md",
+    
+    // Ghost – subtle gray
+    ghost: "bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-800",
   };
 
-  // 3. Sizes
   const sizes = {
     sm: "px-4 py-1.5 text-xs",
-    md: "px-7 py-3 text-sm",
-    lg: "px-10 py-4 text-base",
+    md: "px-6 py-2.5 text-sm",
+    lg: "px-8 py-3 text-base",
   };
 
   return (
@@ -50,10 +48,9 @@ export const AppButton = ({
       className={cn(baseStyles, variants[variant], sizes[size], className)} 
       {...props}
     >
-      {/* Had l-span bach n-diru dak l-glow effect sghir (optional) */}
       <span className="relative z-10">{children}</span>
       
-      {/* Shine effect mlli k-tklicki aw t-hoveri */}
+      {/* Subtle shine effect only for primary button */}
       {variant === 'primary' && (
         <span className="absolute inset-0 bg-white/20 translate-y-full hover:translate-y-0 transition-transform duration-300" />
       )}

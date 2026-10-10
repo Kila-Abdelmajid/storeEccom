@@ -10,8 +10,8 @@ export async function GET() {
         cr.id,
         cr.userid as "userId",
         COALESCE(CONCAT(u.firstname, ' ', u.lastname), 'Anonymous') as "userName",
+        u.email as "userEmail",
         cr.rating,
-        cr.title,
         cr.content,
         cr.verified,
         cr.createdat as "createdAt"
@@ -35,9 +35,9 @@ export async function POST(request: NextRequest) {
   const userId = session.userId;
 
   const body = await request.json();
-  const { rating, title, content } = body;
+  const { rating, content } = body;
 
-  if (!rating || !title || !content) {
+  if (!rating || !content) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
   }
 
@@ -49,14 +49,13 @@ export async function POST(request: NextRequest) {
     const displayName = user?.fullname || 'Anonymous';
 
     const [newReview] = await sql`
-      INSERT INTO clientReviews (userid, name, rating, title, content, verified)
-      VALUES (${userId}, ${displayName}, ${rating}, ${title}, ${content}, false)
+      INSERT INTO clientReviews (userid, name, rating, content, verified)
+      VALUES (${userId}, ${displayName}, ${rating}, ${content}, false)
       RETURNING 
         id,
         userid as "userId",
         ${displayName} as "userName",
         rating,
-        title,
         content,
         verified,
         createdat as "createdAt"
@@ -80,7 +79,7 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: 'reviewId required' }, { status: 400 });
   }
 
-  const { rating, title, content } = await request.json();
+  const { rating, content } = await request.json();
 
   try {
     // Check ownership
@@ -93,14 +92,13 @@ export async function PUT(request: NextRequest) {
 
     const [updated] = await sql`
       UPDATE clientReviews
-      SET rating = ${rating}, title = ${title}, content = ${content}
+      SET rating = ${rating}, content = ${content}
       WHERE id = ${parseInt(reviewId)}
       RETURNING 
         id,
         userid as "userId",
         (SELECT CONCAT(firstname, ' ', lastname) FROM users WHERE userid = ${userId}) as "userName",
         rating,
-        title,
         content,
         verified,
         createdat as "createdAt"

@@ -1,17 +1,17 @@
-// app/api/categories/route.ts
 import { NextResponse } from 'next/server';
 import sql from '@/lib/db';
 import { writeFile, mkdir, unlink } from 'fs/promises';
 import path from 'path';
 import { getSession } from '@/lib/auth';
 
-
-// GET all categories
+// GET active categories (not deleted)
 export async function GET() {
   try {
     const categories = await sql`
-      SELECT categoryid as id, categoryname as name, slug, categoryimage as image
+      SELECT categoryid as id, categoryname as name, slug, categoryimage as image,
+             userid as "userId"
       FROM categories
+      WHERE is_deleted = false
       ORDER BY categoryname ASC
     `;
     return NextResponse.json(categories);
@@ -24,11 +24,9 @@ export async function GET() {
 // POST create category
 export async function POST(request: Request) {
   try {
-     const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized – no session" }, { status: 401 });
-  }
-  const userId = session.userId;
+    const session = await getSession();
+    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const userId = session.userId;
 
     const formData = await request.formData();
     const name = formData.get('name') as string;
@@ -37,12 +35,12 @@ export async function POST(request: Request) {
 
     if (!name) return NextResponse.json({ error: 'Name required' }, { status: 400 });
 
-    // Generate slug if empty
     if (!slug) {
       slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
     }
-    // Ensure slug uniqueness (add -2, -3 etc if needed – simplified)
-    const existing = await sql`SELECT slug FROM categories WHERE slug = ${slug}`;
+
+    // Check unique slug among active categories
+    const existing = await sql`SELECT slug FROM categories WHERE slug = ${slug} AND is_deleted = false`;
     if (existing.length > 0) {
       return NextResponse.json({ error: 'Slug already exists' }, { status: 400 });
     }
@@ -59,7 +57,7 @@ export async function POST(request: Request) {
     }
 
     const result = await sql`
-      INSERT INTO categories (categoryname, slug, categoryimage,userid)
+      INSERT INTO categories (categoryname, slug, categoryimage, userid)
       VALUES (${name}, ${slug}, ${imagePath}, ${userId})
       RETURNING categoryid as id
     `;
@@ -70,16 +68,12 @@ export async function POST(request: Request) {
   }
 }
 
-// PUT update category (using query param ?id=...)
+// PUT update category (only active)
 export async function PUT(request: Request) {
   try {
-
-       const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized – no session" }, { status: 401 });
-  }
-  const userId = session.userId;
-
+    const session = await getSession();
+    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const userId = session.userId;
 
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
@@ -92,8 +86,11 @@ export async function PUT(request: Request) {
 
     if (!name || !slug) return NextResponse.json({ error: 'Name and slug required' }, { status: 400 });
 
-    // Check slug uniqueness excluding current
-    const existing = await sql`SELECT categoryid FROM categories WHERE slug = ${slug} AND categoryid != ${parseInt(id)}`;
+    // Check slug uniqueness excluding current and among active categories
+    const existing = await sql`
+      SELECT categoryid FROM categories
+      WHERE slug = ${slug} AND categoryid != ${parseInt(id)} AND is_deleted = false
+    `;
     if (existing.length > 0) return NextResponse.json({ error: 'Slug already used' }, { status: 400 });
 
     let imagePath: string | null | undefined = undefined;
@@ -105,26 +102,26 @@ export async function PUT(request: Request) {
       const buffer = Buffer.from(await imageFile.arrayBuffer());
       await writeFile(path.join(uploadDir, filename), buffer);
       imagePath = `/uploads/categories/${filename}`;
-    }
 
-    // Update
-    if (imagePath !== undefined) {
-      // Optionally delete old image file
+      // Delete old image file
       const old = await sql`SELECT categoryimage FROM categories WHERE categoryid = ${parseInt(id)}`;
       if (old[0]?.categoryimage) {
         const oldPath = path.join(process.cwd(), 'public', old[0].categoryimage);
-        try { await unlink(oldPath); } catch(e) {}
+        try { await unlink(oldPath); } catch { /* ignore */ }
       }
+    }
+
+    if (imagePath !== undefined) {
       await sql`
         UPDATE categories
         SET categoryname = ${name}, slug = ${slug}, categoryimage = ${imagePath}
-        WHERE categoryid = ${parseInt(id)} AND userid = ${userId}
+        WHERE categoryid = ${parseInt(id)} AND userid = ${userId} AND is_deleted = false
       `;
     } else {
       await sql`
         UPDATE categories
         SET categoryname = ${name}, slug = ${slug}
-        WHERE categoryid = ${parseInt(id)} AND userid = ${userId}
+        WHERE categoryid = ${parseInt(id)} AND userid = ${userId} AND is_deleted = false
       `;
     }
     return NextResponse.json({ success: true });
@@ -134,31 +131,41 @@ export async function PUT(request: Request) {
   }
 }
 
-// DELETE category
+// DELETE (soft delete) – archive category and all its products (set archived_by_category = true)
 export async function DELETE(request: Request) {
   try {
-
-        const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized – no session" }, { status: 401 });
-  }
-  const userId = session.userId;
+    const session = await getSession();
+    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const userId = session.userId;
 
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
     if (!id) return NextResponse.json({ error: 'ID required' }, { status: 400 });
 
-    // Optional: delete image file
-    const cat = await sql`SELECT categoryimage FROM categories WHERE categoryid = ${parseInt(id)} AND userid = ${userId}`;
-    if (cat[0]?.categoryimage) {
-      const filePath = path.join(process.cwd(), 'public', cat[0].categoryimage);
-      try { await unlink(filePath); } catch(e) {}
+    // Check if category exists and is active
+    const category = await sql`
+      SELECT categoryid FROM categories WHERE categoryid = ${parseInt(id)} AND is_deleted = false
+    `;
+    if (category.length === 0) {
+      return NextResponse.json({ error: 'Category not found or already deleted' }, { status: 404 });
     }
 
-    await sql`DELETE FROM categories WHERE categoryid = ${parseInt(id)} AND userid = ${userId}`;
-    return NextResponse.json({ success: true });
+    // Soft delete category
+    await sql`
+      UPDATE categories SET is_deleted = true, deleted_at = NOW()
+      WHERE categoryid = ${parseInt(id)} AND userid = ${userId}
+    `;
+
+    // Soft delete all active products in this category, mark them as archived_by_category = true
+    await sql`
+      UPDATE products
+      SET is_deleted = true, deleted_at = NOW(), archived_by_category = true
+      WHERE categoryid = ${parseInt(id)} AND is_deleted = false
+    `;
+
+    return NextResponse.json({ success: true, message: 'Category and its products archived' });
   } catch (error) {
     console.error(error);
-    return NextResponse.json({ error: 'Delete failed' }, { status: 500 });
+    return NextResponse.json({ error: 'Archive failed' }, { status: 500 });
   }
 }

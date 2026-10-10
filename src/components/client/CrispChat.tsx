@@ -7,7 +7,7 @@ const CrispChat = () => {
   useEffect(() => {
     // Blast "VOTRE_WEBSITE_ID" 7et ghir dak l-koud sghir li fih les chiffres w les lettres
     // Masalan: "1234abcd-5678-efgh..."
-    Crisp.configure("35e78f99-6978-4deb-b5cc-2a739548c918");
+    Crisp.configure("b0ab38f9-171c-4e9f-ba62-f3492ab64ae2");
     
   }, []);
 

@@ -1,129 +1,74 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
 import { useRouter } from 'next/navigation';
-import { startRegistration } from '@simplewebauthn/browser';
+import ProfileSidebar from '@/components/client/profileSection/ProfileSidebar';
+import UserInfo from '@/components/client/profileSection/UserInfo';
+import OrdersList from '@/components/client/profileSection/OrdersList';
+import FavoritesList from '@/components/client/profileSection/FavoritesList';
+import { useAuth } from '@/hooks/useAuth';
+
+type Tab = 'info' | 'orders' | 'favorites';
 
 export default function ProfilePage() {
-  const [user, setUser] = useState<any>(null);
-  const [hasPasskey, setHasPasskey] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [activeTab, setActiveTab] = useState<Tab>('info');
   const router = useRouter();
+  const { session, loading } = useAuth();
 
+  // Redirect to login if not authenticated (client‑side only)
   useEffect(() => {
-    fetchUser();
-  }, []);
-
-  const fetchUser = async () => {
-    try {
-      const res = await fetch('/api/auth/users');
-      if (!res.ok) {
-        if (res.status === 401) router.push('/login');
-        throw new Error();
-      }
-      const data = await res.json();
-      setUser(data);
-      // Check if user has passkey
-      const passkeyRes = await fetch('/api/auth/webauthn/has-passkey');
-      if (passkeyRes.ok) {
-        const { hasPasskey } = await passkeyRes.json();
-        setHasPasskey(hasPasskey);
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
+    if (!loading && !session) {
+      router.push('/login');
     }
-  };
+  }, [session, loading, router]);
 
-  const addFaceId = async () => {
-    setError('');
-    try {
-      const optsRes = await fetch('/api/auth/webauthn/register/begin', { method: 'POST' });
-      if (!optsRes.ok) {
-        const err = await optsRes.json();
-        throw new Error(err.error);
-      }
-      const options = await optsRes.json();
-      const attestation = await startRegistration(options);
-      const verifyRes = await fetch('/api/auth/webauthn/register/complete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ attestation }),
-      });
-      if (!verifyRes.ok) {
-        const err = await verifyRes.json();
-        throw new Error(err.error);
-      }
-      alert('Face ID added successfully');
-      setHasPasskey(true);
-    } catch (err: any) {
-      setError(err.message);
-    }
-  };
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100/60">
+        <div className="w-12 h-12 border-4 border-amber-200 border-t-amber-600 rounded-full animate-spin" />
+      </div>
+    );
+  }
 
-  const removeFaceId = async () => {
-    if (!confirm('Remove Face ID from your account? You can add it again later.')) return;
-    try {
-      const res = await fetch('/api/auth/webauthn/remove-passkey', { method: 'DELETE' });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error);
-      }
-      alert('Face ID removed');
-      setHasPasskey(false);
-    } catch (err: any) {
-      setError(err.message);
-    }
+  const fadeVariants = {
+    hidden: { opacity: 0, y: 10 },
+    visible: { opacity: 1, y: 0, transition: { duration: 0.3 } },
   };
-
-  if (loading) return <div className="text-center py-20">Loading...</div>;
-  if (!user) return null;
 
   return (
-    <div className="max-w-3xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
-      <div className="bg-white shadow overflow-hidden sm:rounded-lg">
-        <div className="px-4 py-5 sm:px-6">
-          <h3 className="text-lg leading-6 font-medium text-gray-900">User Profile</h3>
-          <p className="mt-1 max-w-2xl text-sm text-gray-500">Personal details and security settings.</p>
+    <div className="bg-gradient-to-br from-slate-50 via-white to-slate-100/60 min-h-screen py-12 md:py-16">
+      <div className="container mx-auto px-4 max-w-7xl">
+        {/* Header */}
+        <div className="mb-8">
+          <div className="flex items-center gap-2 text-sm text-slate-500 mb-2">
+            <span className="hover:text-amber-600 transition cursor-pointer" onClick={() => router.push('/')}>
+              Home
+            </span>
+            <span>/</span>
+            <span className="text-amber-600 font-medium">My Account</span>
+          </div>
+          <h1 className="text-4xl md:text-5xl font-light text-slate-800 tracking-tight flex items-center gap-2">
+            <span className="font-serif italic bg-gradient-to-r from-amber-600 to-amber-500 bg-clip-text text-transparent">My Account</span>
+          </h1>
+          <div className="w-20 h-px bg-gradient-to-r from-amber-400 to-transparent mt-3" />
         </div>
-        <div className="border-t border-gray-200 px-4 py-5 sm:p-0">
-          <dl className="sm:divide-y sm:divide-gray-200">
-            <div className="py-4 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-              <dt className="text-sm font-medium text-gray-500">Full name</dt>
-              <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{user.firstName} {user.lastName}</dd>
+
+        <div className="flex flex-col md:flex-row gap-8">
+          <ProfileSidebar activeTab={activeTab} onTabChange={setActiveTab} />
+          <motion.div
+            key={activeTab}
+            initial="hidden"
+            animate="visible"
+            variants={fadeVariants}
+            className="flex-1"
+          >
+            <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-md border border-white/50 p-6 md:p-8 transition-all">
+              {activeTab === 'info' && <UserInfo />}
+              {activeTab === 'orders' && <OrdersList />}
+              {activeTab === 'favorites' && <FavoritesList />}
             </div>
-            <div className="py-4 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-              <dt className="text-sm font-medium text-gray-500">Email</dt>
-              <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{user.email}</dd>
-            </div>
-            <div className="py-4 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-              <dt className="text-sm font-medium text-gray-500">Phone</dt>
-              <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{user.phone || 'Not provided'}</dd>
-            </div>
-            <div className="py-4 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-              <dt className="text-sm font-medium text-gray-500">Face ID / Passkey</dt>
-              <dd className="mt-1 text-sm sm:mt-0 sm:col-span-2">
-                {hasPasskey ? (
-                  <button
-                    onClick={removeFaceId}
-                    className="inline-flex items-center px-3 py-1 border border-transparent text-sm font-medium rounded-md text-red-700 bg-red-100 hover:bg-red-200"
-                  >
-                    Remove Face ID
-                  </button>
-                ) : (
-                  <button
-                    onClick={addFaceId}
-                    className="inline-flex items-center px-3 py-1 border border-transparent text-sm font-medium rounded-md text-white bg-[#c9a96e] hover:bg-[#b88a4a]"
-                  >
-                    Add Face ID
-                  </button>
-                )}
-                {error && <p className="text-red-500 text-xs mt-2">{error}</p>}
-              </dd>
-            </div>
-          </dl>
+          </motion.div>
         </div>
       </div>
     </div>

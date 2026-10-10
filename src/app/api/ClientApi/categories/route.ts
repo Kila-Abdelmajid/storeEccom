@@ -10,6 +10,7 @@ export async function GET() {
         categoryimage as image,
         slug
       FROM categories
+      WHERE is_deleted = false
       ORDER BY categoryid ASC
     `;
 

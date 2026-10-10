@@ -30,6 +30,7 @@ export async function GET() {
         ) as reviews
       FROM products p
       LEFT JOIN categories c ON p.categoryid = c.categoryid
+        WHERE p.is_deleted = false
       ORDER BY p.createdat DESC
     `;
 
